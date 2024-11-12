@@ -871,7 +871,9 @@ class MultimodalGenerativeCVAE(object):
                        torch.reshape(corrs, [num_samples, -1, ph, num_components]))
 
         if self.hyperparams['dynamic'][self.node_type]['distribution']:
-            y_dist = self.dynamic.integrate_distribution(a_dist, x)
+            #y_dist = self.dynamic.integrate_distribution(a_dist, x)
+            y_dist=a_dist
+            sigma_matrix=y_dist.get_covariance_matrix()
         else:
             y_dist = a_dist
 
@@ -1134,10 +1136,10 @@ class MultimodalGenerativeCVAE(object):
                                                               full_dist=full_dist,
                                                               all_z_sep=all_z_sep)
 
-        _, our_sampled_future = self.p_y_xz(mode, x, x_nr_t, y_r, n_s_t0, z,
+        _, our_sampled_future,sigma_matrix = self.p_y_xz(mode, x, x_nr_t, y_r, n_s_t0, z,
                                             prediction_horizon,
                                             num_samples,
                                             num_components,
                                             gmm_mode)
 
-        return our_sampled_future
+        return our_sampled_future,sigma_matrix
