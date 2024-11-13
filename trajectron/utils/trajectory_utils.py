@@ -101,18 +101,18 @@ def obtain_traj_samples(traj_ref,cov1):
     #traj_ref = np.column_stack((tmp_x1, tmp_y1))
 
     #V0=(v + a * self.dt)[0]
-    cov1=cov1.squeeze(0).numpy()[0]
+    #cov1=cov1.squeeze(0).numpy()[0]
     #print(cov1)
     cov1=[[cov1[0][0][0],cov1[0][0][1],0,0],
         [cov1[0][1][0],cov1[0][1][1],0,0],
-        [0,0,1,0],
-        [0,0,0,1]]
+        [0,0,25,0],
+        [0,0,0,25]]
     traj_ref=traj_ref[0][0]
     V0 = np.linalg.norm(traj_ref[1, :] - traj_ref[0, :]) / 0.1
     len_traj = 20
     V_ref = np.ones(len_traj) * V0
-    ttx = traj_ref[19][0] - traj_ref[0][0]
-    tty = traj_ref[19][1] - traj_ref[0][1]
+    ttx = traj_ref[-1][0] - traj_ref[0][0]
+    tty = traj_ref[-1][1] - traj_ref[0][1]
     T0 = np.arctan2(tty, ttx)
     T_ref = np.ones(len_traj) * T0
     X0 = np.array([traj_ref[0][0], traj_ref[0][1], V0, T0])
@@ -128,7 +128,7 @@ def obtain_traj_samples(traj_ref,cov1):
     #%% Controller gains (Stanley, Velocity)
     Kc_samples = np.arange(1, 31, 2)
     Ksoft_samples = np.arange(0.2, 3.2, 0.2)
-    Kspeed_samples = np.arange(2.6, 4.1, 0.1)
+    Kspeed_samples = np.arange(0.1, 4.1, 0.1)
 
     C, S, Sp = np.meshgrid(Kc_samples, Ksoft_samples, Kspeed_samples)
     combinations = np.vstack([C.ravel(), S.ravel(), Sp.ravel()]).T
@@ -157,7 +157,7 @@ def obtain_traj_samples(traj_ref,cov1):
 
     xhat[:, 0] = X0
     Phat[:, :, 0] = P0
-    Q = np.diag([0.1**2, (1.5 * 50 * np.pi / 180)**2])
+    Q = np.diag([0.1**2, (20 * 50 * np.pi / 180)**2])
 
     # Number of elements in w
     nw = 2
@@ -184,13 +184,16 @@ def obtain_traj_samples(traj_ref,cov1):
     steer_cov = np.zeros((1, nsim))
     accel_mean = np.zeros((1, nsim))
     accel_cov = np.zeros((1, nsim))
-
+    flag=False
     control_gains = {'Kc': 5, 'Ksoft': 0.3}
     for s in range(1):
         control_gains['Kspeed'] = Kspeed_samples[s]
 
         for k in range(nsim - 1):
             # Placeholder for sigma points initialization function
+            if np.isnan(xhat[:,k]).any() or np.isnan(Phat[:, :, k]).any():
+                flag=True
+                break
             xSigmaPts, WM, WC, ensp = spf_initialization(xhat[:, k], nsig, Phat[:, :, k])
 
             steer_hat, accel_hat = [], []
@@ -224,6 +227,7 @@ def obtain_traj_samples(traj_ref,cov1):
 
                 xPredSigmaPts[:, j] = Xk1
 
+
             steer_hat = np.array(steer_hat)
             accel_hat = np.array(accel_hat)
 
@@ -243,10 +247,12 @@ def obtain_traj_samples(traj_ref,cov1):
     # Define the point
 
     # Define k
+    if flag==True:
+        traj_ref=traj_ref.tolist()
+        return np.array([[traj_ref]]),0,0,None
     nll_res=[]
     for k in range(len(xhat[0,:])):
         #k = len(xhat[0,:])-1
-        # Assume xhat and Phat are already defined as numpy arrays
         x1=xhat[0, :][k]
         y1=xhat[1, :][k]
         point=np.array([x1,y1])
@@ -254,10 +260,12 @@ def obtain_traj_samples(traj_ref,cov1):
         covariance = Phat[0:2, 0:2, k-1]
         #print(covariance)
         # Calculate the probability density function value
-        pdf_value = multivariate_normal.pdf(point, mean=mean, cov=covariance)
-
+        #pdf_value = multivariate_normal.pdf(point, mean=mexan, cov=covariance)
+        x_minus_mu=0.2*(point-mean)
+        #print(x_minus_mu)
+        #print((x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu))
         # Calculate the negative log-likelihood
-        nll_value = -np.log(pdf_value)
+        nll_value = 0.5 * np.log((2 * np.pi) ** 2 * np.linalg.det(covariance)) + 0.5 * (x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu)
         nll_res.append(nll_value)
     traj_clc = np.column_stack((xhat[0,:], xhat[1,:])).tolist()
     traj_clc=np.array([[traj_clc]])
@@ -282,13 +290,13 @@ def prediction_output_to_trajectories(prediction_output_dict,
         histories_dict[t] = dict()
         output_dict[t] = dict()
         futures_dict[t] = dict()
-        future_v[t]=dict()
+        #future_v[t]=dict()
         prediction_nodes = prediction_output_dict[t].keys()
 
         for node in prediction_nodes:
             predictions_output = prediction_output_dict[t][node]
             position_state = {'position': ['x', 'y']}
-            v_state={'velocity': ['norm']}
+            #v_state={'velocity': ['norm']}
             #v_statey={'velocity', 'y'): vy}
             #v_norm= {('velocity', 'norm'): np.linalg.norm(np.stack((vx, vy), axis=-1), axis=-1)}
             history = node.get(np.array([t - max_h, t]), position_state)  # History includes current pos
@@ -303,19 +311,25 @@ def prediction_output_to_trajectories(prediction_output_dict,
                     continue
 
             trajectory = predictions_output
-            future_v1 = node.get(np.array([t + 1, t + ph]), v_state)
+            #future_v1 = node.get(np.array([t + 1, t + ph]), v_state)
 
             if map is None:
                 histories_dict[t][node] = history
-                res,_,_,_=obtain_traj_samples(trajectory,sigma_matrix[0][ct])
+                #print(ct)
+                sigma_matrix1=sigma_matrix[t][node]
+                #size_s=sigma_matrix1.size()[1]
+                #print(sigma_matrix.size())
+                cov1=sigma_matrix1
+                #print(cov1)
+                res,_,_,_=obtain_traj_samples(trajectory,cov1)
                 output_dict[t][node] = res
 
                 futures_dict[t][node] = future
 
-                future_v[t][node]=future_v1
+                #future_v[t][node]=future_v1
             else:
                 histories_dict[t][node] = map.to_map_points(history)
                 output_dict[t][node] = map.to_map_points(trajectory)
                 futures_dict[t][node] = map.to_map_points(future)
             ct=ct+1
-    return output_dict, histories_dict, futures_dict,future_v
+    return output_dict, histories_dict, futures_dict
