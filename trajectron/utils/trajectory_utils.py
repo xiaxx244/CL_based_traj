@@ -185,7 +185,7 @@ def obtain_traj_samples(traj_ref,cov1):
     accel_mean = np.zeros((1, nsim))
     accel_cov = np.zeros((1, nsim))
     flag=False
-    control_gains = {'Kc': 5, 'Ksoft': 0.3}
+    control_gains = {'Kc': 6, 'Ksoft': 0.3}
     for s in range(1):
         control_gains['Kspeed'] = Kspeed_samples[s]
 
@@ -256,16 +256,20 @@ def obtain_traj_samples(traj_ref,cov1):
         x1=xhat[0, :][k]
         y1=xhat[1, :][k]
         point=np.array([x1,y1])
-        mean = xhat[0:2, k-1]
-        covariance = Phat[0:2, 0:2, k-1]
+        mean = xhat[0:2, k]
+        covariance = Phat[0:2, 0:2, k]
+        #print((2 * np.pi) ** 2 * np.linalg.det(covariance))
         #print(covariance)
         # Calculate the probability density function value
         #pdf_value = multivariate_normal.pdf(point, mean=mexan, cov=covariance)
-        x_minus_mu=0.3*(point-mean)
-        #print(x_minus_mu)
+        x_minus_mu=(point-mean)
+        quad_form=x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu
+        #print((x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu))
+        #print((2 * np.pi) ** 2 * np.linalg.det(covariance))
+
         #print((x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu))
         # Calculate the negative log-likelihood
-        nll_value = (0.5 * np.log((2 * np.pi) ** 2) * np.linalg.det(covariance)) + 0.5 * (x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu)
+        nll_value = 0.5 * (np.log(2 * np.pi) + np.abs(np.log(np.linalg.det(covariance))) +quad_form )
         nll_res.append(nll_value)
     traj_clc = np.column_stack((xhat[0,:], xhat[1,:])).tolist()
     traj_clc=np.array([[traj_clc]])
