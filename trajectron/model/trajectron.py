@@ -139,8 +139,9 @@ class Trajectron(object):
                 gmm_mode=False,
                 full_dist=True,
                 all_z_sep=False):
-
+        #co_matrix=[]
         predictions_dict = {}
+        sigma_dict={}
         for node_type in self.env.NodeType:
             if node_type not in self.pred_state:
                 continue
@@ -170,7 +171,7 @@ class Trajectron(object):
                 map = map.to(self.device)
 
             # Run forward pass
-            predictions = model.predict(inputs=x,
+            predictions,sigma_matrix = model.predict(inputs=x,
                                         inputs_st=x_st_t,
                                         first_history_indices=first_history_index,
                                         neighbors=neighbors_data_st,
@@ -190,6 +191,8 @@ class Trajectron(object):
             for i, ts in enumerate(timesteps_o):
                 if ts not in predictions_dict.keys():
                     predictions_dict[ts] = dict()
-                predictions_dict[ts][nodes[i]] = np.transpose(predictions_np[:, [i]], (1, 0, 2, 3))
-
-        return predictions_dict
+                    sigma_dict[ts]=dict()
+                predictions_dict[ts][nodes[i]] = np.transpose(predictions_np[:, [i]], (1, 0, 2, 3))    
+                sigma_dict[ts][nodes[i]]=sigma_matrix[0][i].detach().cpu().squeeze(0).numpy()[0]
+            #co_matrix.append(sigma_matrix)
+        return predictions_dict,sigma_dict

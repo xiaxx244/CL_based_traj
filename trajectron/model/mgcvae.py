@@ -7,6 +7,35 @@ from model.model_utils import *
 import model.dynamics as dynamic_module
 from environment.scene_graph import DirectedEdge
 
+# Assuming sampled_future has shape (num_samples, num_agents, ph, state_dim)
+# Extracting x and y positions and initial velocities
+
+def run_simulation_with_sampled_future(sampled_future):
+    num_samples, num_agents, ph, state_dim = sampled_future.shape
+    nll_results = []
+    trajectory_predictions = []
+
+    # Iterate over each sample and agent
+    for sample_idx in range(num_samples):
+        for agent_idx in range(num_agents):
+            # Extract trajectory and initial velocity
+            traj_ref = sampled_future[sample_idx, agent_idx, :, :2]  # Use [:, :2] to get x, y positions
+            initial_velocity = sampled_future[sample_idx, agent_idx, 0, 2]  # Assuming 3rd index in state_dim is velocity
+
+            # Run trajectory sampling
+            '''
+            x_hat, _, nll_value, Phat = obtain_traj_samples(traj_ref, initial_velocity)
+            traj_clc = np.column_stack((x_hat[0, :], x_hat[1, :]))
+
+            # Store the results
+            trajectory_predictions.append(traj_clc)
+            nll_results.append(nll_value)
+            '''
+    return trajectory_predictions
+
+# Call the function with your sampled_future data
+# sampled_future = ... (Your sampled future data)
+
 
 class MultimodalGenerativeCVAE(object):
     def __init__(self,
@@ -873,17 +902,19 @@ class MultimodalGenerativeCVAE(object):
         if self.hyperparams['dynamic'][self.node_type]['distribution']:
             #y_dist = self.dynamic.integrate_distribution(a_dist, x)
             y_dist=a_dist
-            sigma_matrix=y_dist.get_covariance_matrix()
+            co_matrix=y_dist.get_covariance_matrix()
         else:
             y_dist = a_dist
-
+        co_matrix=a_dist.get_covariance_matrix()
         if mode == ModeKeys.PREDICT:
             if gmm_mode:
                 a_sample = a_dist.mode()
             else:
                 a_sample = a_dist.rsample()
             sampled_future = self.dynamic.integrate_samples(a_sample, x)
-            return y_dist, sampled_future
+            #trajectory_predictions = run_simulation_with_sampled_future(sampled_future)
+            #print(trajectory_predictions)
+            return y_dist, sampled_future,co_matrix
         else:
             return y_dist
 
@@ -1004,6 +1035,7 @@ class MultimodalGenerativeCVAE(object):
 
         ELBO = log_likelihood - self.kl_weight * kl + 1. * mutual_inf_p
         loss = -ELBO
+        #print(labels.size())
 
         if self.hyperparams['log_histograms'] and self.log_writer is not None:
             self.log_writer.add_histogram('%s/%s' % (str(self.node_type), 'log_p_y_xz'),
@@ -1136,10 +1168,10 @@ class MultimodalGenerativeCVAE(object):
                                                               full_dist=full_dist,
                                                               all_z_sep=all_z_sep)
 
-        _, our_sampled_future,sigma_matrix = self.p_y_xz(mode, x, x_nr_t, y_r, n_s_t0, z,
+        _, our_sampled_future,co_matrix = self.p_y_xz(mode, x, x_nr_t, y_r, n_s_t0, z,
                                             prediction_horizon,
                                             num_samples,
                                             num_components,
                                             gmm_mode)
 
-        return our_sampled_future,sigma_matrix
+        return our_sampled_future,co_matrix
