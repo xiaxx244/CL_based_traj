@@ -105,8 +105,8 @@ def obtain_traj_samples(traj_ref,cov1):
     #print(cov1)
     cov1=[[cov1[0][0][0],cov1[0][0][1],0,0],
         [cov1[0][1][0],cov1[0][1][1],0,0],
-        [0,0,25,0],
-        [0,0,0,25]]
+        [0,0,0.4,0],
+        [0,0,0,0.4]]
     traj_ref=traj_ref[0][0]
     V0 = np.linalg.norm(traj_ref[1, :] - traj_ref[0, :]) / 0.1
     len_traj = 20
@@ -157,7 +157,7 @@ def obtain_traj_samples(traj_ref,cov1):
 
     xhat[:, 0] = X0
     Phat[:, :, 0] = P0
-    Q = np.diag([0.1**2, (20 * 50 * np.pi / 180)**2])
+    Q = np.diag([0.1**2, (2 * 50 * np.pi / 180)**2])
 
     # Number of elements in w
     nw = 2
@@ -261,11 +261,11 @@ def obtain_traj_samples(traj_ref,cov1):
         #print(covariance)
         # Calculate the probability density function value
         #pdf_value = multivariate_normal.pdf(point, mean=mexan, cov=covariance)
-        x_minus_mu=0.2*(point-mean)
+        x_minus_mu=0.3*(point-mean)
         #print(x_minus_mu)
         #print((x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu))
         # Calculate the negative log-likelihood
-        nll_value = 0.5 * np.log((2 * np.pi) ** 2 * np.linalg.det(covariance)) + 0.5 * (x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu)
+        nll_value = (0.5 * np.log((2 * np.pi) ** 2) * np.linalg.det(covariance)) + 0.5 * (x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu)
         nll_res.append(nll_value)
     traj_clc = np.column_stack((xhat[0,:], xhat[1,:])).tolist()
     traj_clc=np.array([[traj_clc]])
