@@ -269,7 +269,7 @@ def obtain_traj_samples(traj_ref,cov1):
 
         #print((x_minus_mu.T @ np.linalg.inv(covariance) @ x_minus_mu))
         # Calculate the negative log-likelihood
-        nll_value = 0.5 * (np.log(2 * np.pi) + np.abs(np.log(np.linalg.det(covariance))) +quad_form )
+        nll_value = 0.5 * (np.log(2 * np.pi) + np.log(np.linalg.det(covariance)+1.0) +quad_form )
         nll_res.append(nll_value)
     traj_clc = np.column_stack((xhat[0,:], xhat[1,:])).tolist()
     traj_clc=np.array([[traj_clc]])
