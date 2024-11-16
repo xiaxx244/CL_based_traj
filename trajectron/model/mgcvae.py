@@ -289,7 +289,10 @@ def obtain_traj_samples(traj_ref, cov1):
         accel_cov[:, k] = accel_cov_next
         # Update xhat1p_CL for the next step
     xhat1p_CL=torch.stack((xhat1p_CL[0, :], xhat1p_CL[1, :]), dim=1)
-    print(xhat1p_CL.size())
+    print("begin")
+    print(xhat1p_CL.cpu().tolist())
+    print(traj_ref.cpu().tolist())
+    print("end")
     return xhat1p_CL, P1p_CL
 #END of the modified CL control
 
@@ -357,7 +360,7 @@ class MultimodalGenerativeCVAE(object):
 
         dynamic_class = getattr(dynamic_module, hyperparams['dynamic'][self.node_type]['name'])
         dyn_limits = hyperparams['dynamic'][self.node_type]['limits']
-        self.dynamic = dynamic_class(self.env.scenes[0].dt, dyn_limits, device,
+        self.traj_final = dynamic_class(self.env.scenes[0].dt, dyn_limits, device,
                                      self.model_registrar, self.x_size, self.node_type)
 
     def set_curr_iter(self, curr_iter):
@@ -731,7 +734,7 @@ class MultimodalGenerativeCVAE(object):
         initial_dynamics['pos'] = node_pos
         initial_dynamics['vel'] = node_vel
 
-        self.dynamic.set_initial_condition(initial_dynamics)
+        self.traj_final.set_initial_condition(initial_dynamics)
 
         if self.hyperparams['incl_robot_node']:
             x_r_t, y_r = robot[..., 0, :], robot[..., 1:, :]
@@ -1183,7 +1186,7 @@ class MultimodalGenerativeCVAE(object):
                        torch.reshape(corrs, [num_samples, -1, ph, num_components]))
 
         if self.hyperparams['dynamic'][self.node_type]['distribution']:
-            #y_dist = self.dynamic.integrate_distribution(a_dist, x)
+            #y_dist = self.traj_final.integrate_distribution(a_dist, x)
             y_dist=a_dist
             co_matrix=y_dist.get_covariance_matrix()
         else:
@@ -1192,7 +1195,7 @@ class MultimodalGenerativeCVAE(object):
         mean_value=a_dist.get_mean()
         a_sample=a_dist.mode()
         #get future samples
-        sampled_future = self.dynamic.integrate_samples(a_sample, x)
+        sampled_future = self.traj_final.integrate_samples(a_sample, x)
         a_dist=self.cl_control(sampled_future,co_matrix)
         y_dist=a_dist
         if mode == ModeKeys.PREDICT:
@@ -1200,7 +1203,7 @@ class MultimodalGenerativeCVAE(object):
                 a_sample = a_dist.mode()
             else:
                 a_sample = a_dist.rsample()
-            sampled_future = self.dynamic.integrate_samples(a_sample, x)
+            sampled_future = self.traj_final.integrate_samples(a_sample, x)
             #trajectory_predictions = run_simulation_with_sampled_future(sampled_future)
             #print(trajectory_predictions)
             return y_dist, sampled_future,co_matrix
@@ -1222,10 +1225,12 @@ class MultimodalGenerativeCVAE(object):
         #unsqueeze tensor to match the input to GMM2D
         mus_arr=torch.stack(mus_arr, dim=0).unsqueeze(0)
         cov_arr=torch.stack(cov_arr, dim=0).unsqueeze(0)
+        '''
         print("shape is:")
         print(mus_arr.size())
         print(cov_arr.size())
         print("end")
+        '''
         return GMM2D1(mus_arr,cov_arr)
 
     def encoder(self, mode, x, y_e, num_samples=None):
