@@ -253,47 +253,6 @@ def main():
                 trajectron.step_annealers(node_type)
                 optimizer[node_type].zero_grad()
                 train_loss = trajectron.train_loss(batch, node_type)
-                
-
-                eval_ade_batch_errors = np.array([])
-                max_hl = hyperparams['maximum_history_length']
-                ph = hyperparams['prediction_horizon']
-                if args.scene_freq_mult_viz:
-                    scene = np.random.choice(eval_scenes, p=eval_scenes_sample_probs)
-                else:
-                    scene = np.random.choice(eval_scenes)
-                timestep = scene.sample_timesteps(1, min_future_timesteps=ph)
-                predictions,co_matrix = trajectron.predict(scene,
-                                                 timestep,
-                                                 ph=20,
-                                                 min_future_timesteps=ph,
-                                                 z_mode=True,
-                                                 gmm_mode=True,
-                                                 all_z_sep=False,
-                                                 full_dist=False)
-                if len(co_matrix)!=0:
-                    batch_error_dict = evaluation.compute_batch_statistics(predictions,
-                                                                       scene.dt,
-                                                                       max_hl=max_hl,
-                                                                       ph=20,
-                                                                       sigma_matrix=co_matrix,
-                                                                       node_type_enum=train_env.NodeType,
-                                                                       map=None,
-                                                                       prune_ph_to_future=False,
-                                                                       kde=False)
-                    #mean_ade=np.mean(np.hstack((eval_ade_batch_errors, batch_error_dict['VEHICLE']['ade'])))
-                    #mean_ade2=np.mean(np.hstack((eval_ade_batch_errors, batch_error_dict['PEDESTRIAN']['ade'])))
-                    mean_fde=np.mean(np.hstack((eval_ade_batch_errors, batch_error_dict['VEHICLE']['fde'])))
-                    #mean_fde2=np.mean(np.hstack((eval_ade_batch_errors, batch_error_dict['PEDESTRIAN']['fde'])))
-                    fade=np.array([mean_fde])
-                    nonan_fade=np.sum(fade[~np.isnan(fade)])
-                    #if not np.isnan(mean_ade):
-                    #print(nonan_fade)
-                    #print(train_loss)
-                    print("Y")
-                    train_loss=train_loss+2*torch.tensor(nonan_fade)
-
-
                 pbar.set_description(f"Epoch {epoch}, {node_type} L: {train_loss.item():.2f}")
                 train_loss.backward()
                 # Clipping gradients.
