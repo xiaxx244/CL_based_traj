@@ -211,7 +211,7 @@ def obtain_traj_samples(traj_ref, cov1):
 
     n = 4
     nsig = 1
-    nsim=len(t)
+    #nsim=len(t)
     # Initialize state estimates
     xhat1p_CL = torch.zeros((n, nt))
     P1p_CL = torch.zeros((n, n, nt))
