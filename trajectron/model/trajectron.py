@@ -186,13 +186,13 @@ class Trajectron(object):
                                         all_z_sep=all_z_sep)
 
             predictions_np = predictions.cpu().detach().numpy()
-
+            sigma_matrix=sigma_matrix.squeeze(0).squeeze(2).detach().cpu().numpy()
             # Assign predictions to node
             for i, ts in enumerate(timesteps_o):
                 if ts not in predictions_dict.keys():
                     predictions_dict[ts] = dict()
                     sigma_dict[ts]=dict()
                 predictions_dict[ts][nodes[i]] = np.transpose(predictions_np[:, [i]], (1, 0, 2, 3))    
-                sigma_dict[ts][nodes[i]]=sigma_matrix[0][i].detach().cpu().squeeze(0).numpy()[0]
+                sigma_dict[ts][nodes[i]]=sigma_matrix[i]
             #co_matrix.append(sigma_matrix)
         return predictions_dict,sigma_dict
