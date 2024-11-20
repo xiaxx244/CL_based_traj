@@ -28,28 +28,31 @@ def spf_initialization(mean, nsig, cov):
         WC (torch.Tensor): Weights for the covariance (1D tensor of size `2*nx + 1`).
         ensp (torch.Tensor): Ensemble size vector (1D tensor of ones of size `2*nx + 1`).
     """
-    nx = len(mean)  # Number of states
+    nx = mean.shape[0]  # Number of states
     nsp = 2 * nx + 1  # Number of sigma points
-    ensp = torch.ones(nsp)  # Vector of all ones
+    ensp = torch.ones(nsp, dtype=mean.dtype, device=mean.device)  # Vector of all ones
 
     # Generate weighting matrices
     Wi = 0.5 / nsig**2
     W0M = (nsig**2 - nx) / nsig**2
     W0C = (nsig**2 - nx) / nsig**2 + 3 - nsig**2 / nx
 
-    WM = torch.cat([torch.tensor([W0M]), torch.full((2 * nx,), Wi)])  # Mean weights
-    WC = torch.cat([torch.tensor([W0C]), torch.full((2 * nx,), Wi)])  # Covariance weights
+    WM = torch.cat([torch.tensor([W0M], dtype=mean.dtype, device=mean.device),
+                    torch.full((2 * nx,), Wi, dtype=mean.dtype, device=mean.device)])  # Mean weights
+    WC = torch.cat([torch.tensor([W0C], dtype=mean.dtype, device=mean.device),
+                    torch.full((2 * nx,), Wi, dtype=mean.dtype, device=mean.device)])  # Covariance weights
 
     # Add a small perturbation to the covariance matrix to prevent numerical issues
     epsilon = 1e-10
-    cov_perturbed = cov + epsilon * torch.eye(cov.size(0))
+    cov_perturbed = cov + epsilon * torch.eye(cov.shape[0], dtype=cov.dtype, device=cov.device)
 
     # Compute Cholesky decomposition
     Psqrtm = nsig * torch.linalg.cholesky(cov_perturbed).T
 
     # Initialize sigma points
-    SigmaPts = torch.cat([torch.zeros((nx, 1)), -Psqrtm, Psqrtm], dim=1)
-    SigmaPts += mean[:, None] * ensp  # Add mean to each column
+    SigmaPts = torch.cat([torch.zeros((nx, 1), dtype=mean.dtype, device=mean.device),
+                          -Psqrtm, Psqrtm], dim=1)
+    SigmaPts += mean.unsqueeze(1) * ensp  # Add mean to each column
 
     return SigmaPts, WM, WC, ensp
 
@@ -63,11 +66,11 @@ def get_crosstrack_error(x, y, path_ref):
         path_ref (torch.Tensor): Reference path as a 2x2 tensor [[x1, x2], [y1, y2]].
 
     Returns:
-        crosstrack_error (float): Crosstrack error.
+        crosstrack_error (torch.Tensor): Crosstrack error.
     """
-    position = torch.tensor([x, y])
-    A = path_ref[:, 0]
-    B = path_ref[:, 1]
+    position = torch.tensor([x, y], dtype=path_ref.dtype, device=path_ref.device)
+    A = path_ref[0]
+    B = path_ref[1]
     crosstrack_error = (((B[0] - A[0]) * (A[1] - position[1]) -
                          (A[0] - position[0]) * (B[1] - A[1])) /
                         torch.sqrt((B[0] - A[0])**2 + (B[1] - A[1])**2))
@@ -75,49 +78,49 @@ def get_crosstrack_error(x, y, path_ref):
 
 def predict_states_spf(Xk, Uinput, dt):
     """
-    Predict the next state of the vehicle using the state transition model.
+    Predict the next state of the vehicle using a simple bicycle model.
 
     Args:
-        Xk (torch.Tensor): Current state [x, y, yaw, velocity].
-        Uinput (torch.Tensor): Control inputs [steering angle, acceleration].
+        Xk (torch.Tensor): Current state [x, y, velocity, yaw] as a 1D tensor.
+        Uinput (torch.Tensor): Control inputs [steer, acceleration] as a 1D tensor.
         dt (float): Time step.
 
     Returns:
-        Xk1 (torch.Tensor): Predicted state [x, y, yaw, velocity].
-        steer_clipped (float): Clipped steering angle.
+        Xk1 (torch.Tensor): Predicted next state [x, y, velocity, yaw].
+        steer_clipped (torch.Tensor): Clipped steering angle.
     """
-    L = 3  # Length of the car
-    Vk = Xk[3]
-    acc = Uinput[1]
+    L = 3  # length of the car
     steer = Uinput[0]
+    accel = Uinput[1]
 
     # Clip the steering angle
-    steer_clipped = torch.clamp(steer, -50 * torch.pi / 180, 50 * torch.pi / 180)
+    steer_clipped = torch.clip(steer, -50 * torch.pi / 180, 50 * torch.pi / 180)
 
-    # State update equations
-    new_yaw = Xk[2] + (Vk / L) * torch.sin(steer_clipped) * dt
-    new_x = Xk[0] + Vk * torch.cos(new_yaw + steer_clipped) * dt
-    new_y = Xk[1] + Vk * torch.sin(new_yaw + steer_clipped) * dt
-    new_vel = Vk + dt * acc
+    # Compute the next state
+    new_yaw = Xk[3] + (Xk[2] / L) * torch.sin(steer_clipped) * dt
+    new_x = Xk[0] + Xk[2] * torch.cos(new_yaw + steer_clipped) * dt
+    new_y = Xk[1] + Xk[2] * torch.sin(new_yaw + steer_clipped) * dt
+    new_vel = Xk[2] + dt * accel
 
-    Xk1 = torch.tensor([new_x, new_y, new_yaw, new_vel])
+    # Create the new state tensor
+    Xk1 = torch.tensor([new_x, new_y, new_vel, new_yaw], dtype=Xk.dtype, device=Xk.device)
     return Xk1, steer_clipped
 
 def stanley(delta, Xk, path_ref, control_gains):
     """
-    Compute the steering angle using the Stanley controller.
+    Compute the steering angle using the Stanley controller with PyTorch.
 
     Args:
         delta (float): Difference between path and vehicle angles.
-        Xk (torch.Tensor): Current state [x, y, yaw, velocity].
+        Xk (torch.Tensor): Current state [x, y, yaw, velocity] as a 1D tensor.
         path_ref (torch.Tensor): Reference path as a 2x2 tensor [[x1, x2], [y1, y2]].
         control_gains (dict): Control gains with keys 'Kc' and 'Ksoft'.
 
     Returns:
-        steer_angle (float): Computed steering angle.
-        crosstrack_error (float): Crosstrack error.
+        steer_angle (torch.Tensor): Computed steering angle (scalar).
+        crosstrack_error (torch.Tensor): Crosstrack error (scalar).
     """
-    L = 3  # Length of the car
+    L = 2.8  # Length of the car
     Kc = control_gains['Kc']
     Ksoft = control_gains['Ksoft']
 
@@ -128,11 +131,11 @@ def stanley(delta, Xk, path_ref, control_gains):
     crosstrack_error = get_crosstrack_error(x_front, y_front, path_ref)
 
     # Compute steering correction
-    theta_correction = torch.atan2(Kc * crosstrack_error, (Ksoft + Xk[3]))
+    theta_correction = torch.atan2(Kc * crosstrack_error, (Ksoft + Xk[2]))
     steer_angle = delta + theta_correction
 
     # Wrap the angle between -pi and pi
-    steer_angle = torch.atan2(torch.sin(steer_angle), torch.cos(steer_angle))
+    steer_angle = ((steer_angle + torch.pi) % (2 * torch.pi)) - torch.pi
 
     return steer_angle, crosstrack_error
 
@@ -141,23 +144,23 @@ def calc_a_priori(pred_pts, WM, WC, Qx, ensp):
     Calculate the a priori mean and covariance.
 
     Args:
-        pred_pts (torch.Tensor): Predicted points (n x m), where `n` is the state dimension and `m` is the number of sigma points.
-        WM (torch.Tensor): Weights for the mean (1D tensor of length `m`).
-        WC (torch.Tensor): Weights for the covariance (1D tensor of length `m`).
-        Qx (torch.Tensor): Process noise covariance matrix (n x n).
-        ensp (torch.Tensor): Ensemble size vector for broadcasting (1D tensor of length `m`).
+        pred_pts (torch.Tensor): Predicted sigma points, shape (state_dim, num_sigma_pts).
+        WM (torch.Tensor): Weights for the mean, shape (num_sigma_pts,).
+        WC (torch.Tensor): Weights for the covariance, shape (num_sigma_pts,).
+        Qx (torch.Tensor): Process noise covariance, shape (state_dim, state_dim).
+        ensp (torch.Tensor): Sigma point indices, shape (num_sigma_pts,).
 
     Returns:
-        xhat_next (torch.Tensor): A priori state mean (n x 1).
-        Phat_next (torch.Tensor): A priori state covariance matrix (n x n).
+        xhat_next (torch.Tensor): Predicted mean, shape (state_dim,).
+        Phat_next (torch.Tensor): Predicted covariance, shape (state_dim, state_dim).
     """
-    # Calculate mean (a priori)
-    xPred = pred_pts @ WM  # Weighted sum for the mean
+    # Calculate Mean (a priori)
+    xPred = torch.matmul(pred_pts, WM)  # Weighted sum for the mean
     xhat_next = xPred
 
-    # Calculate covariance (a priori)
-    exSigmaPts = pred_pts - (xPred[:, None] * ensp)  # Broadcasting for state deviations
-    PxxPred = exSigmaPts @ torch.diag(WC) @ exSigmaPts.T + Qx  # Covariance calculation
+    # Calculate Covariance (a priori)
+    exSigmaPts = pred_pts - torch.outer(xPred, ensp)
+    PxxPred = exSigmaPts @ torch.diag(WC) @ exSigmaPts.T + Qx
     Phat_next = PxxPred
 
     return xhat_next, Phat_next
@@ -165,58 +168,51 @@ def calc_a_priori(pred_pts, WM, WC, Qx, ensp):
 def obtain_traj_samples(traj_ref, cov1):
     # Initialize variables
     # PyTorch equivalent of the NumPy operation
-    x0_CL = torch.cat([
-        traj_ref[0,0:2],             # First two rows of the first column
-        torch.tensor([-3.027]),      # Scalar value as a 1D tensor
-        torch.tensor([traj_ref[2, 0]])  # Third row, first column as a tensor
-    ])
     cov1 = torch.tensor(cov1, dtype=torch.float32)
     cov1 = torch.tensor([
         [cov1[0, 0], cov1[0, 1], 0, 0],
         [cov1[1, 0], cov1[1, 1], 0, 0],
-        [0, 0, 0.05**2, 0],
-        [0, 0, 0, 1**2]
-    ])
+        [0, 0, 0.4, 0],
+        [0, 0, 0, 0.4]
+    ], dtype=torch.float32)
 
-    traj_ref = traj_ref.squeeze(1)
     nt = len(traj_ref)
     dt = 0.1
-    t = torch.arange(0, dt * nt, dt)
+    t = torch.arange(0, dt * nt, dt, dtype=torch.float32)
 
-    # Calculate velocity reference
-    # Calculate the differences in x and y positions
-    dx = traj_ref[1:, 0] - traj_ref[:-1, 0]  # Difference in x positions
-    dy = traj_ref[1:, 1] - traj_ref[:-1, 1]  # Difference in y positions
+    ttx = traj_ref[-1, 0] - traj_ref[0, 0]
+    tty = traj_ref[-1, 1] - traj_ref[0, 1]
+    T0 = torch.atan2(tty, ttx)
 
-    # Calculate the velocity (change in position / time step)
-    velocity_x = dx / dt  # Velocity in x direction
-    velocity_y = dy / dt  # Velocity in y direction
+    # Calculate reference velocity
+    displacements = traj_ref[1:] - traj_ref[:-1]
+    velocities = displacements / dt
+    ref_V = torch.norm(velocities, dim=1)
+    ref_V = torch.cat([ref_V, ref_V[-1:]])
 
-    # Calculate the velocity magnitude (norm) at each time step
-    velocity_norm = torch.sqrt(velocity_x**2 + velocity_y**2)
-    ref_V= torch.cat((x0_CL[3].unsqueeze(0),velocity_norm))
+    # Initial state
+    x0_CL = torch.tensor([traj_ref[0, 0], traj_ref[0, 1], ref_V[0], T0], dtype=torch.float32)
 
-    # Process noise covariance
-    Qx = dt * torch.diag(torch.tensor([1**2, 1**2, 0.05**2, 1**2]))
-
-    # Initial state error covariance
+    Qx = torch.diag(torch.tensor([0, 0, 1, 0.03046174], dtype=torch.float32))
     P0_CL = cov1
 
-    # Control gains
     control_gains = {
-        'Kc': 1,
+        'Kc': 0.001,
         'Ksoft': 0,
-        'Kspeed': 10
+        'Kspeed': 0.04
     }
 
     n = 4
     nsig = 1
-    #nsim=len(t)
-    # Initialize state estimates
-    xhat1p_CL = torch.zeros((n, nt))
-    P1p_CL = torch.zeros((n, n, nt))
-    xhat1p_CL[:, 0] = torch.tensor(x0_CL)
+
+    # Initialize storage
+    xhat1p_CL = torch.zeros((n, nt), dtype=torch.float32)
+    P1p_CL = torch.zeros((n, n, nt), dtype=torch.float32)
+    xhat1p_CL[:, 0] = x0_CL
     P1p_CL[:, :, 0] = P0_CL
+
+    # Initialize state estimates
+
     steer_hat = torch.zeros(1, 2 * n + 1)
     accel_hat = torch.zeros(1, 2 * n + 1)
     steer_clipped_sample = torch.zeros(1, 2 * n + 1)
@@ -230,69 +226,73 @@ def obtain_traj_samples(traj_ref, cov1):
     accel_mean = torch.zeros(1, nt)
     accel_cov = torch.zeros(1, nt)
 
-    # Main loop
-    for k in range(nt-1):
-        # Sigma point initialization
+    for k in range(nt - 1):
         xSigmaPts, WM, WC, ensp = spf_initialization(xhat1p_CL[:, k], nsig, P1p_CL[:, :, k])
-
-        # Loop over all sigma points
-        for j in range(len(xSigmaPts[0])):
-
-            distances = torch.sqrt((traj_ref[0, :] - xSigmaPts[0, j])**2 + (traj_ref[1, :] - xSigmaPts[1, j])**2)
+        for j in range(xSigmaPts.shape[1]):
+            # Compute distances and nearest index
+            distances = torch.sqrt((traj_ref[:, 0] - xSigmaPts[0, j])**2 +(traj_ref[:, 1] - xSigmaPts[1, j])**2)
             nearest_index = torch.argmin(distances)
 
+            # Select the reference path
             if nearest_index == 0:
-                path_ref = traj_ref[:, nearest_index:nearest_index+2]
+                path_ref = traj_ref[nearest_index:nearest_index + 2, :]
             else:
-                path_ref = traj_ref[:, nearest_index-1:nearest_index+1]
+                path_ref = traj_ref[nearest_index - 1:nearest_index + 1, :]
 
-            angle_car = xSigmaPts[2, j]
-            path_dy = path_ref[1, 1] - path_ref[1, 0]
-            path_dx = path_ref[0, 1] - path_ref[0, 0]
-            angle_path = math.atan2(path_dy, path_dx)
+            # Calculate angles
+            angle_car = xSigmaPts[3, j]
+            path_dy = path_ref[1, 1] - path_ref[0, 1]
+            path_dx = path_ref[1, 0] - path_ref[0, 0]
+            angle_path = torch.atan2(path_dy, path_dx)
             delta = angle_path - angle_car
 
-            # Stanley controller
+            # Stanley control for steering
             steer_angle, crosstrack_error = stanley(delta, xSigmaPts[:, j], path_ref, control_gains)
             steer_hat[:, j] = steer_angle
 
-            # Speed controller
-
-            if nearest_index == nt-2:
+            # Determine reference velocity
+            if nearest_index == nt - 1:
                 Vref = ref_V[nearest_index]
             else:
                 Vref = ref_V[nearest_index + 1]
+
+            # Acceleration control
             accel = control_gains['Kspeed'] * (Vref - xSigmaPts[3, j])
             accel_hat[:, j] = accel
 
-            # SPF prediction
-            Uinput = torch.tensor([steer_hat[:, j], accel_hat[:, j]])
+            # State prediction
+            Uinput = torch.cat((steer_hat[:, j].unsqueeze(0), accel_hat[:, j].unsqueeze(0)))
             Xk1, steer_clipped = predict_states_spf(xSigmaPts[:, j], Uinput, dt)
             steer_clipped_sample[:, j] = steer_clipped
-            xPredSigmaPts[:, j] = Xk1
+            xPredSigmaPts[:, j] = Xk1.flatten()
             crosstrack_sample[:, j] = crosstrack_error
 
+        # Aggregate results
         crosstrack_all[:, k] = crosstrack_sample
         steer_clipped_all[:, k] = steer_clipped_sample
 
-        # A-priori state and covariance
+        # A priori state and covariance estimation
         xhat_next, Phat_next = calc_a_priori(xPredSigmaPts, WM, WC, Qx, ensp)
         xhat1p_CL[:, k + 1] = xhat_next
         P1p_CL[:, :, k + 1] = Phat_next
 
+        # A priori steering mean and covariance
         steer_mean_next, steer_cov_next = calc_a_priori(steer_hat, WM, WC, 0, ensp)
         steer_mean[:, k] = steer_mean_next
         steer_cov[:, k] = steer_cov_next
 
+        # A priori acceleration mean and covariance
         accel_mean_next, accel_cov_next = calc_a_priori(accel_hat, WM, WC, 0, ensp)
         accel_mean[:, k] = accel_mean_next
         accel_cov[:, k] = accel_cov_next
         # Update xhat1p_CL for the next step
     xhat1p_CL=torch.stack((xhat1p_CL[0, :], xhat1p_CL[1, :]), dim=1)
+    '''
     print("begin")
     print(xhat1p_CL.cpu().tolist())
     print(traj_ref.cpu().tolist())
     print("end")
+    '''
     return xhat1p_CL, P1p_CL
 #END of the modified CL control
 
@@ -360,7 +360,7 @@ class MultimodalGenerativeCVAE(object):
 
         dynamic_class = getattr(dynamic_module, hyperparams['dynamic'][self.node_type]['name'])
         dyn_limits = hyperparams['dynamic'][self.node_type]['limits']
-        self.traj_final = dynamic_class(self.env.scenes[0].dt, dyn_limits, device,
+        self.traj_ref = dynamic_class(self.env.scenes[0].dt, dyn_limits, device,
                                      self.model_registrar, self.x_size, self.node_type)
 
     def set_curr_iter(self, curr_iter):
@@ -734,7 +734,7 @@ class MultimodalGenerativeCVAE(object):
         initial_dynamics['pos'] = node_pos
         initial_dynamics['vel'] = node_vel
 
-        self.traj_final.set_initial_condition(initial_dynamics)
+        self.traj_ref.set_initial_condition(initial_dynamics)
 
         if self.hyperparams['incl_robot_node']:
             x_r_t, y_r = robot[..., 0, :], robot[..., 1:, :]
@@ -1186,27 +1186,29 @@ class MultimodalGenerativeCVAE(object):
                        torch.reshape(corrs, [num_samples, -1, ph, num_components]))
 
         if self.hyperparams['dynamic'][self.node_type]['distribution']:
-            #y_dist = self.traj_final.integrate_distribution(a_dist, x)
+            #y_dist = self.traj_ref.integrate_distribution(a_dist, x)
             y_dist=a_dist
             co_matrix=y_dist.get_covariance_matrix()
         else:
             y_dist = a_dist
+
         co_matrix=a_dist.get_covariance_matrix()
         mean_value=a_dist.get_mean()
         a_sample=a_dist.mode()
         #get future samples
-        sampled_future = self.traj_final.integrate_samples(a_sample, x)
-        a_dist=self.cl_control(sampled_future,co_matrix)
+        sampled_future = self.traj_ref.integrate_samples(a_sample, x)
+        a_dist,sigma_matrix=self.cl_control(sampled_future,co_matrix)
+        #sigma_matrix=a_dist.get_covariance_matrix()
+        #print(sigma_matrix.size())
         y_dist=a_dist
         if mode == ModeKeys.PREDICT:
-            if gmm_mode:
-                a_sample = a_dist.mode()
-            else:
-                a_sample = a_dist.rsample()
-            sampled_future = self.traj_final.integrate_samples(a_sample, x)
+
+            #sampled_future = self.traj_ref.integrate_samples(a_sample, x)
             #trajectory_predictions = run_simulation_with_sampled_future(sampled_future)
             #print(trajectory_predictions)
-            return y_dist, sampled_future,co_matrix
+            sampled_future=y_dist.mode()
+
+            return y_dist, sampled_future,sigma_matrix
         else:
             return y_dist
 
@@ -1231,7 +1233,7 @@ class MultimodalGenerativeCVAE(object):
         print(cov_arr.size())
         print("end")
         '''
-        return GMM2D1(mus_arr,cov_arr)
+        return GMM2D1(mus_arr,cov_arr),cov_arr
 
     def encoder(self, mode, x, y_e, num_samples=None):
         """
