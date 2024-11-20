@@ -1196,8 +1196,8 @@ class MultimodalGenerativeCVAE(object):
         mean_value=a_dist.get_mean()
         a_sample=a_dist.mode()
         #get future samples
-        sampled_future = self.traj_ref.integrate_samples(a_sample, x)
-        a_dist,sigma_matrix=self.cl_control(sampled_future,co_matrix)
+        mean_dist = self.traj_ref.integrate_samples(a_sample, x)
+        a_dist,sigma_matrix=self.cl_control(mean_dist,co_matrix)
         #sigma_matrix=a_dist.get_covariance_matrix()
         #print(sigma_matrix.size())
         y_dist=a_dist
