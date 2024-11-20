@@ -6,6 +6,48 @@ from utils import prediction_output_to_trajectories
 import visualization
 from matplotlib import pyplot as plt
 
+def nll_calculation(predicted_trajs,sigma_matrix,gt_trajs):
+    #print(predicted_trajs)
+    #print(gt_trajs)
+    #print(sigma_matrix)
+    #print(" ")
+    #sigma_matrix=sigma_matrix[0]
+    print(gt_trajs.shape)
+    print(predicted_trajs[0].shape)
+    nll_CL = np.zeros((len(gt_trajs), 1))
+    for k in range(len(gt_trajs)):
+        truth = gt_trajs[k]
+        mu = predicted_trajs[0][0][k]
+        Cov = sigma_matrix[k]
+        #print(Cov)
+        #print(" ")
+        
+        print(truth)
+        print(mu)
+        print(Cov)
+        print(" ")
+        quad_form = np.dot(np.dot((truth - mu).T, np.linalg.inv(Cov)), (truth - mu))
+        nll_CL[k, 0] = 0.5 * (np.log(2 * np.pi) + np.log(np.linalg.det(Cov)) + quad_form)
+    return nll_CL[:,0]
+
+def compute_ade1(predicted_trajs, ph,gt_traj):
+    error=np.linalg.norm(np.reshape(predicted_trajs,(ph,2))[:gt_traj.shape[0]] - gt_traj, axis=-1)
+    ade = np.mean(error, axis=-1)
+    #print(ade.flatten())
+    return ade.flatten()
+
+
+def compute_fde1(predicted_trajs, gt_traj):
+    '''
+    if  np.reshape(predicted_trajs,(20,2)).shape!=gt_traj.shape:
+        final_error = np.linalg.norm(predicted_trajs[:, :, -1] - np.append(gt_traj,[gt_traj[-1]],axis=0)[-1], axis=-1)
+    else:
+    '''
+    #print(predicted_trajs[-1])
+    #print(gt_traj[-1])
+    #print(" ")
+    final_error = np.linalg.norm(predicted_trajs[:, :, gt_traj.shape[0]-1] - gt_traj[-1], axis=-1)
+    return np.asarray([final_error])
 
 def compute_ade(predicted_trajs, gt_traj):
     error = np.linalg.norm(predicted_trajs - gt_traj, axis=-1)
@@ -58,6 +100,7 @@ def compute_batch_statistics(prediction_output_dict,
                              dt,
                              max_hl,
                              ph,
+                             sigma_matrix,
                              node_type_enum,
                              kde=True,
                              obs=False,
@@ -71,16 +114,25 @@ def compute_batch_statistics(prediction_output_dict,
                                                        dt,
                                                        max_hl,
                                                        ph,
+                                                       sigma_matrix,
                                                        prune_ph_to_future=prune_ph_to_future)
 
     batch_error_dict = dict()
     for node_type in node_type_enum:
-        batch_error_dict[node_type] =  {'ade': list(), 'fde': list(), 'kde': list(), 'obs_viols': list()}
+        batch_error_dict[node_type] =  {'ade': list(), 'fde': list(),'nll':list(), 'kde': list(), 'obs_viols': list()}
 
     for t in prediction_dict.keys():
         for node in prediction_dict[t].keys():
-            ade_errors = compute_ade(prediction_dict[t][node], futures_dict[t][node])
-            fde_errors = compute_fde(prediction_dict[t][node], futures_dict[t][node])
+            '''
+            print(prediction_dict[t][node])
+            print(futures_dict[t][node])
+            print(" ")
+            '''
+            #print(sigma_matrix.shape)
+            ade_errors = compute_ade1(prediction_dict[t][node],ph, futures_dict[t][node])
+            fde_errors = compute_fde1(prediction_dict[t][node], futures_dict[t][node])[0][0]
+            nll_errors = nll_calculation(prediction_dict[t][node], sigma_matrix[t][node],futures_dict[t][node])
+            #print(fde_errors)
             if kde:
                 kde_ll = compute_kde_nll(prediction_dict[t][node], futures_dict[t][node])
             else:
@@ -95,6 +147,7 @@ def compute_batch_statistics(prediction_output_dict,
                 kde_ll = np.min(kde_ll)
             batch_error_dict[node.type]['ade'].extend(list(ade_errors))
             batch_error_dict[node.type]['fde'].extend(list(fde_errors))
+            batch_error_dict[node.type]['nll'].extend(list(nll_errors))
             batch_error_dict[node.type]['kde'].extend([kde_ll])
             batch_error_dict[node.type]['obs_viols'].extend([obs_viols])
 
