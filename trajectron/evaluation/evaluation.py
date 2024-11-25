@@ -6,6 +6,31 @@ from utils import prediction_output_to_trajectories
 import visualization
 from matplotlib import pyplot as plt
 
+def is_curved(trajectory, angle_threshold=5):
+    """
+    Determine if a trajectory has a curve by checking angle changes.
+
+    Parameters:
+        trajectory (np.ndarray): Nx2 array of (x, y) positions.
+        angle_threshold (float): Minimum angle change (in degrees) to consider a curve.
+
+    Returns:
+        bool: True if trajectory has a curve, False otherwise.
+    """
+    # Calculate direction vectors between consecutive points
+    directions = np.diff(trajectory, axis=0)
+
+    # Normalize direction vectors
+    norms = np.linalg.norm(directions, axis=1, keepdims=True)
+    normalized_directions = directions / norms
+
+    # Calculate angles between consecutive direction vectors
+    angles = np.arccos(np.einsum('ij,ij->i', normalized_directions[:-1], normalized_directions[1:]))
+    angles = np.degrees(angles)  # Convert radians to degrees
+    #print(angles)
+    # Check if any angle change exceeds the threshold
+    return np.any(angles > angle_threshold)
+
 def nll_calculation(predicted_trajs,sigma_matrix,gt_trajs):
     #print(predicted_trajs)
     #print(gt_trajs)
@@ -27,9 +52,9 @@ def nll_calculation(predicted_trajs,sigma_matrix,gt_trajs):
         print(Cov)
         print(" ")
         '''
-        quad_form = np.dot(np.dot((truth - mu).T, np.linalg.inv(Cov)), (truth - mu))
+        quad_form = np.dot(np.dot((truth - mu), np.linalg.inv(Cov)), (truth - mu))
         nll_CL[k, 0] = 0.5 * (np.log(2 * np.pi) + np.log(np.linalg.det(Cov)) + quad_form)
-    return sum(nll_CL[:,0])
+    return nll_CL[:,0]
 
 def compute_ade1(predicted_trajs, ph,gt_traj):
     error=np.linalg.norm(np.reshape(predicted_trajs,(ph,2))[:gt_traj.shape[0]] - gt_traj, axis=-1)
@@ -47,7 +72,7 @@ def compute_fde1(predicted_trajs, gt_traj):
     #print(predicted_trajs[-1])
     #print(gt_traj[-1])
     #print(" ")
-    final_error = np.linalg.norm(predicted_trajs[0][0][-1] - gt_traj[-1])
+    final_error = np.linalg.norm(predicted_trajs[:, :,-1] - gt_traj[-1], axis=-1)
     return np.asarray([final_error])
 
 def compute_ade(predicted_trajs, gt_traj):
@@ -57,7 +82,7 @@ def compute_ade(predicted_trajs, gt_traj):
 
 
 def compute_fde(predicted_trajs, gt_traj):
-    final_error = np.linalg.norm(predicted_trajs[:, :, -1] - gt_traj[-1], axis=-1)
+    final_error = np.linalg.norm(predicted_trajs[:, :-1] - gt_traj[-1], axis=-1)
     return final_error.flatten()
 
 
@@ -124,16 +149,29 @@ def compute_batch_statistics(prediction_output_dict,
 
     for t in prediction_dict.keys():
         for node in prediction_dict[t].keys():
-            '''
+            '''' 
             print(prediction_dict[t][node])
             print(futures_dict[t][node])
-            print(" ")
             '''
+            curve=is_curved(futures_dict[t][node])
+            if curve:
+                print(prediction_dict[t][node])
+                print(futures_dict[t][node])
+
+            # Calculate differences in x and y
+            positions=futures_dict[t][node]
+            dx = np.diff(positions[:, 0])  # Differences in x
+            dy = np.diff(positions[:, 1])  # Differences in y
+
+            # Calculate velocity norm
+            velocity_norm = np.sqrt(dx**2 + dy**2) / dt
+            
             #print(sigma_matrix.shape)
             ade_errors = compute_ade1(prediction_dict[t][node],ph, futures_dict[t][node])
-            fde_errors = compute_fde1(prediction_dict[t][node], futures_dict[t][node])
+            fde_errors = compute_fde1(prediction_dict[t][node], futures_dict[t][node])[0][0]
             nll_errors = nll_calculation(prediction_dict[t][node], sigma_matrix[t][node],futures_dict[t][node])
             #print(fde_errors)
+            
             if kde:
                 kde_ll = compute_kde_nll(prediction_dict[t][node], futures_dict[t][node])
             else:
@@ -148,7 +186,9 @@ def compute_batch_statistics(prediction_output_dict,
                 kde_ll = np.min(kde_ll)
             batch_error_dict[node.type]['ade'].extend(list(ade_errors))
             batch_error_dict[node.type]['fde'].extend(list(fde_errors))
-            batch_error_dict[node.type]['nll'].extend(list([nll_errors]))
+            if velocity_norm[0]>3:
+                print(nll_errors)
+                batch_error_dict[node.type]['nll'].extend(list(nll_errors))
             batch_error_dict[node.type]['kde'].extend([kde_ll])
             batch_error_dict[node.type]['obs_viols'].extend([obs_viols])
 
