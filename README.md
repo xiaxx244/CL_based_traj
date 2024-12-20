@@ -1,9 +1,3 @@
-**NOTE**: A new version of the Trajectron++ codebase has been released! Check it out [here](https://github.com/NVlabs/adaptive-prediction)!
-
-<p align="center"><img width="100%" src="img/Trajectron++.png"/></p>
-
-# Trajectron++: Dynamically-Feasible Trajectory Forecasting With Heterogeneous Data #
-This repository contains the code for [Trajectron++: Dynamically-Feasible Trajectory Forecasting With Heterogeneous Data](https://arxiv.org/abs/2001.03093) by Tim Salzmann\*, Boris Ivanovic\*, Punarjay Chakravarty, and Marco Pavone (\* denotes equal contribution).
 
 ## Installation ##
 
@@ -34,12 +28,8 @@ python -m ipykernel install --user --name trajectronpp --display-name "Python 3.
 ```
 
 ### Data Setup ###
-#### Pedestrian Datasets ####
-We've already included preprocessed data splits for the ETH and UCY Pedestrian datasets in this repository, you can see them in `experiments/pedestrians/raw`. In order to process them into a data format that our model can work with, execute the follwing.
-```
-cd experiments/pedestrians
-python process_data.py # This will take around 10-15 minutes, depending on your computer.
-```
+#### Ithaca Datasets ####
+We've already included preprocessed data splits for the Ithaca365 datasets in the Graphite, you can see them in `/home/yx454/original_traj/ablation_study/Trajectron-plus-plus/experiments/processed_ithaca_new_track/`. 
 
 #### nuScenes Dataset ####
 Download the nuScenes dataset (this requires signing up on [their website](https://www.nuscenes.org/)). Note that the full dataset is very large, so if you only wish to test out the codebase and model then you can just download the nuScenes "mini" dataset which only requires around 4 GB of space. Extract the downloaded zip file's contents and place them in the `experiments/nuScenes` directory. Then, download the map expansion pack (v1.1) and copy the contents of the extracted `maps` folder into the `experiments/nuScenes/v1.0-mini/maps` folder. Finally, process them into a data format that our model can work with.
@@ -58,25 +48,13 @@ In case you also want a validation set generated (by default this will just prod
 ```
 
 ## Model Training ##
-### Pedestrian Dataset ###
-To train a model on the ETH and UCY Pedestrian datasets, you can execute a version of the following command from within the `trajectron/` directory.
+### Ithaca365 Dataset ###
+To train a model on the Ithaca365 datasets, you can execute a version of the following command from within the `trajectron/` directory.
 ```
-python train.py --eval_every 10 --vis_every 1 --train_data_dict <dataset>_train.pkl --eval_data_dict <dataset>_val.pkl --offline_scene_graph yes --preprocess_workers 5 --log_dir ../experiments/pedestrians/models --log_tag <desired tag> --train_epochs 100 --augment --conf <desired model configuration>
+python train.py --eval_every 1 --vis_every 1 --conf ../experiments/nuScenes/models/int_ee/config.json --train_data_dict ithaca365_train_youya.pkl --eval_data_dict ithaca365_test_youya.pkl --offline_scene_graph yes --preprocess_workers 10 --batch_size 64 --log_dir <directory to log the trained model>  --train_epochs 20 --data_dir /home/yx454/original_traj/ablation_study/Trajectron-plus-plus/experiments/processed_ithaca_new_track --node_freq_mult_train --log_tag _int_ee --augment
+
 ```
 
-For example, a fully-fleshed out version of this command to train a model without dynamics integration for evaluation on the ETH - University scene would look like:
-```
-python train.py --eval_every 10 --vis_every 1 --train_data_dict eth_train.pkl --eval_data_dict eth_val.pkl --offline_scene_graph yes --preprocess_workers 5 --log_dir ../experiments/pedestrians/models --log_tag _eth_vel_ar3 --train_epochs 100 --augment --conf ../experiments/pedestrians/models/eth_vel/config.json
-```
-What this means is to train a new Trajectron++ model which will be evaluated every 10 epochs, have a few outputs visualized in Tensorboard every 1 epoch, use the `eth_train.pkl` file as the source of training data (which actually contains the four other datasets, since we train using a leave-one-out scheme), and evaluate the partially-trained models on the data within `eth_val.pkl`. Further options specify that we want to perform a bit of preprocessing to make training as fast as possible (`--offline_scene_graph yes`), use 5 threads to parallelize data loading, save trained models and Tensorboard logs to `../experiments/pedestrians/models`, mark the created log directory with an additional `_eth_vel_ar3` at the end, run training for 100 epochs, augment the dataset with rotations (`--augment`), and use the same model configuration as in the model we previously trained for the ETH dataset without any dynamics integration (`--conf ../experiments/pedestrians/models/eth_vel/config.json`).
-
-If you wanted to train a model _with_ dynamics integration for the ETH - University scene, then you would instead run:
-```
-python train.py --eval_every 10 --vis_every 1 --train_data_dict eth_train.pkl --eval_data_dict eth_val.pkl --offline_scene_graph yes --preprocess_workers 5 --log_dir ../experiments/pedestrians/models --log_tag _eth_ar3 --train_epochs 100 --augment --conf ../experiments/pedestrians/models/eth_attention_radius_3/config.json
-```
-where the only difference is the sourced model configuration (now from `../experiments/pedestrians/models/eth_attention_radius_3/config.json`). Our codebase is set up such that hyperparameters are saved in a json file every time a model is trained, so that you don't have to remember what settings you use when you end up training many models in parallel!
-
-Commands like these would be used for all of the scenes in the ETH and UCY datasets (the options being `eth`, `hotel`, `univ`, `zara1`, and `zara2`). The only change would be what `train_data_dict`, `eval_data_dict`, `log_tag`, and configuration file (`conf`) you wish to use.
 
 ### nuScenes Dataset ###
 To train a model on the nuScenes dataset, you can execute one of the following commands from within the `trajectron/` directory, depending on the model version you desire.
