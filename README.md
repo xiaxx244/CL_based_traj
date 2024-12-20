@@ -65,10 +65,7 @@ To train a model on the nuScenes dataset, you can execute one of the following c
 | Base                                      | `python train.py --eval_every 1 --vis_every 1 --conf ../experiments/nuScenes/models/vel_ee/config.json --train_data_dict nuScenes_train_full.pkl --eval_data_dict nuScenes_val_full.pkl --offline_scene_graph yes --preprocess_workers 10 --batch_size 256 --log_dir ../experiments/nuScenes/models --train_epochs 20 --node_freq_mult_train --log_tag _vel_ee --augment`                      |
 | +Dynamics Integration                     | `python train.py --eval_every 1 --vis_every 1 --conf ../experiments/nuScenes/models/int_ee/config.json --train_data_dict nuScenes_train_full.pkl --eval_data_dict nuScenes_val_full.pkl --offline_scene_graph yes --preprocess_workers 10 --batch_size 256 --log_dir ../experiments/nuScenes/models --train_epochs 20 --node_freq_mult_train --log_tag _int_ee --augment`                      |
 
-In case you also want to produce the version of our model that was trained without the ego-vehicle (first row of Table 4 (b) in the paper), then run the command from the third row of the table above, but change line 132 of `train.py` to:
-```
-                                       return_robot=False)
-```
+
 
 ### CPU Training ###
 By default, our training script assumes access to a GPU. If you want to train on a CPU, comment out line 38 in `train.py` and add `--device cpu` to the training command.
