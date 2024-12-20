@@ -29,7 +29,7 @@ python -m ipykernel install --user --name trajectronpp --display-name "Python 3.
 ```
 
 ### Data Setup ###
-#### Ithaca Datasets ####
+#### Ithaca365 Datasets ####
 We've already included preprocessed data splits for the Ithaca365 datasets in the Graphite, you can see them in `/home/yx454/original_traj/ablation_study/Trajectron-plus-plus/experiments/processed_ithaca_new_track/`. 
 
 #### nuScenes Dataset ####
