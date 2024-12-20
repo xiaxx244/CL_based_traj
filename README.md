@@ -102,3 +102,5 @@ such that the two variables will be on the same cpu to train.
 
 ### nuScenes Dataset ###
 If you only want to evaluate models (e.g., produce trajectories and plot them), then the nuScenes mini dataset should be fine. If you want to train a model, then the full nuScenes dataset is required. In either case, you can find them on the [dataset website](https://www.nuscenes.org/).
+## Acknowledgement
+The code is modifed based on [Trajectron++](https://github.com/StanfordASL/Trajectron-plus-plus)
